@@ -20,7 +20,8 @@ ModuleShifting, when used with shellcode payload, is performing the following op
  6. Execute shellcode via function pointer - additional execution methods: function callback or CreateThread API
  7. **Write original dll content over the executed shellcode** - this step avoids leaving a malicious memory artifact on the image memory space of the hosting dll. The shellcode needs to be functionally independent from further stages otherwise execution will break.
 
-![immagine](https://github.com/naksyn/ModuleShifting/assets/59816245/4620f89d-0d6a-4693-a6b3-072ab50c684d)
+![immagine](https://github.com/naksyn/ModuleShifting/assets/59816245/b78e13d1-07b0-4cce-ac67-0035e1241dbc)
+
 
 When using a PE payload, ModuleShifting will perform the following operation:
  1. Legitimate hosting dll is loaded via LoadLibrary
@@ -75,10 +76,7 @@ ModuleShifting can be used with [Pyramid](https://github.com/naksyn/Pyramid) and
 
 ### Demo
 
-
-
-
-https://github.com/naksyn/temp-ModuleShifting/assets/59816245/ec731982-4f97-4d07-b50c-fd30c42eac40
+https://github.com/naksyn/ModuleShifting/assets/59816245/67fcf888-3385-47da-b828-8a2dafeeb1e2
 
 
 # Caveats
@@ -91,9 +89,5 @@ A hosting dll with enough space for the shellcode on the targeted section should
 
 Module Stomping and Module Shifting need to write shellcode on a legitimate dll memory space. ModuleShifting will eliminate this IoC after the cleanup phase but indicators could be spotted by scanners with realtime inspection capabilities.
 
-![immagine](https://github.com/naksyn/ModuleShifting/assets/59816245/fb29b985-4faa-4679-bb6c-f6f9fac6ce94)
-
-
-
-
+![immagine](https://github.com/naksyn/ModuleShifting/assets/59816245/385f9a91-b39f-40e8-8a7a-e01da1de80c6)
 
