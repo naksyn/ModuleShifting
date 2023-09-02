@@ -532,6 +532,7 @@ class ModuleShifting(pe.PE):
             if section.Name.decode().strip('\x00').lower() == self.tgtsection:
                 self.tgtsectionaddr= section.VirtualAddress
                 self.tgtsectionsize= section.SizeOfRawData
+                self.tgtsectionprots = section.Characteristics
                 break
         if self.tgtsectionaddr:
             self.dbg('Found address of %s section %s: 0x%x with size 0x%x bytes', self.hostingdll._name, self.tgtsection, self.tgtsectionaddr, self.tgtsectionsize)
@@ -581,7 +582,7 @@ class ModuleShifting(pe.PE):
 
             self.dbg('setting RW protection on address: 0x%x', mapped)      
             VP_res = VirtualProtect(
-                cast(mapped,c_void_p), # To test relocations, add some values here i.e. +int(0x030000000)
+                cast(mapped,c_void_p),
                 len(self.__data__) + self.size_padding,
                 PAGE_READWRITE,  
                 byref(oldProtect)
@@ -611,7 +612,7 @@ class ModuleShifting(pe.PE):
         # data is a PE or a dll
         self.dbg('setting RW protection on address: 0x%x', mapped)      
         VP_res = VirtualProtect(
-            cast(mapped,c_void_p), # To test relocations, add some values here i.e. +int(0x030000000)
+            cast(mapped,c_void_p), 
             self.OPTIONAL_HEADER.SizeOfImage,
             PAGE_READWRITE,  
             byref(oldProtect)
@@ -662,17 +663,12 @@ class ModuleShifting(pe.PE):
         self.dbg('Finalizing sections.')
         self.finalize_sections()
         #self.mapped_shifted_text= self.hostingdll._handle + self.hostingdllparsed.sections[0].VirtualAddress
-
         
+         
         self.dbg('Executing TLS.')
         self.ExecuteTLS()
         
-        VP_res = VirtualProtect(
-            cast(mapped,c_void_p), # To test relocations, add some values here i.e. +int(0x030000000)
-            self.FP_bytes,
-            PAGE_EXECUTE_READ,  
-            byref(oldProtect)
-        )
+
 
 
         entryaddr = self.moduleshifting.contents.headers.contents.OptionalHeader.AddressOfEntryPoint
@@ -769,7 +765,7 @@ class ModuleShifting(pe.PE):
         mod_bytes_size=len(self.__data__)+self.size_padding
         self.dbg('Cleanup - setting RW protection on address: 0x%x', self._codebaseaddr)      
         VP_res = VirtualProtect(
-                cast(self._codebaseaddr,c_void_p), # To test relocations, add some values here i.e. +int(0x030000000)
+                cast(self._codebaseaddr,c_void_p),
                 mod_bytes_size,
                 PAGE_READWRITE,  
                 byref(oldProtect)
@@ -786,10 +782,38 @@ class ModuleShifting(pe.PE):
                 raise RuntimeError('memmove failed')
         del self.targetsection_backupbuffer
         
+        
+        checkCharacteristic = lambda prots, flag: 1 if (prots & flag) != 0 else 0
+        self.dbg("Checking original sections permissions: execute %d",checkCharacteristic(self.tgtsectionprots, IMAGE_SCN_MEM_EXECUTE))
+        executable = checkCharacteristic(self.tgtsectionprots, IMAGE_SCN_MEM_EXECUTE)
+        self.dbg("Checking original sections permissions: read %d",checkCharacteristic(self.tgtsectionprots, IMAGE_SCN_MEM_READ))
+        readable = checkCharacteristic(self.tgtsectionprots, IMAGE_SCN_MEM_READ)
+        writeable = checkCharacteristic(self.tgtsectionprots, IMAGE_SCN_MEM_WRITE)
+        self.dbg("Checking original sections permissions: write %d",checkCharacteristic(self.tgtsectionprots, IMAGE_SCN_MEM_WRITE))
+        if readable == 1 and writeable == 1 and executable == 1:
+            protection = PAGE_EXECUTE_READWRITE
+        elif readable == 1 and writeable == 1:
+            protection = PAGE_READWRITE
+        elif readable == 1 and executable == 1:
+            protection = PAGE_EXECUTE_READ
+        elif readable == 1:
+            protection = PAGE_READONLY
+        elif executable == 1 and writeable == 0 and readable == 0:
+            protection = PAGE_EXECUTE
+        else:
+            self.dbg('Error - Could not find proper protections to reset back on: 0x%x', self._codebaseaddr)          
+        self.dbg('Cleanup - setting original protections on address: 0x%x', self._codebaseaddr)      
+        VP_res = VirtualProtect(
+                cast(self._codebaseaddr,c_void_p), 
+                mod_bytes_size,
+                protection,  
+                byref(oldProtect)
+            )
+        
         if VP_res == 0:
             print(f'[!] Error code no: {ctypes.GetLastError()}')
             raise WindowsError('VP error')
-    
+
     def copy_sections(self):
         codebase = self._codebaseaddr
         sectionaddr = self.IMAGE_FIRST_SECTION()
@@ -948,31 +972,32 @@ class ModuleShifting(pe.PE):
         if not check:
             self.dbg('IsBadReadPtr(address) at address: 0x%x returned true', importdescaddr)
         i=0 # index for entry import struct
-        for i in range(0, len(self.DIRECTORY_ENTRY_IMPORT)):
-            self.dbg('Found importdesc at address: 0x%x', importdescaddr)
-            importdesc = directory.VirtualAddress 
-            
-            # ref: https://sites.google.com/site/peofcns/win32forth/pe-header-f/02-image_directory/02-import_descriptor
-            entry_struct=self.DIRECTORY_ENTRY_IMPORT[i].struct
-            entry_imports=self.DIRECTORY_ENTRY_IMPORT[i].imports
-            dll = self.DIRECTORY_ENTRY_IMPORT[i].dll.decode('utf-8')
-            if not bool(dll):
-                self.dbg('Importdesc at address 0x%x name is NULL. Skipping load library', importdescaddr)
-                hmod = dll
-            else:
-                self.dbg('Found imported DLL, %s. Loading..', dll)
-                hmod = dlopen(dll)
-                if not bool(hmod): raise WindowsError('Failed to load library, %s' % dll)
-                result_realloc= realloc(
-                    self.moduleshifting.contents.modules,
-                    (self.moduleshifting.contents.modules._b_base_.numModules + 1) * sizeof(HMODULE)
-                )
-                if not bool(result_realloc):
-                    raise WindowsError('Failed to allocate additional room for our new import.')
-                self.moduleshifting.contents.modules = cast(result_realloc, type(self.moduleshifting.contents.modules))
-                self.moduleshifting.contents.modules[self.moduleshifting.contents.modules._b_base_.numModules] = hmod
-                self.moduleshifting.contents.modules._b_base_.numModules += 1
-
+        try:
+            for i in range(0, len(self.DIRECTORY_ENTRY_IMPORT)):
+                self.dbg('Found importdesc at address: 0x%x', importdescaddr)
+                importdesc = directory.VirtualAddress 
+                
+                # ref: https://sites.google.com/site/peofcns/win32forth/pe-header-f/02-image_directory/02-import_descriptor
+                entry_struct=self.DIRECTORY_ENTRY_IMPORT[i].struct
+                entry_imports=self.DIRECTORY_ENTRY_IMPORT[i].imports
+                dll = self.DIRECTORY_ENTRY_IMPORT[i].dll.decode('utf-8')
+                if not bool(dll):
+                    self.dbg('Importdesc at address 0x%x name is NULL. Skipping load library', importdescaddr)
+                    hmod = dll
+                else:
+                    self.dbg('Found imported DLL, %s. Loading..', dll)
+                    hmod = dlopen(dll)
+                    if not bool(hmod): raise WindowsError('Failed to load library, %s' % dll)
+                    result_realloc= realloc(
+                        self.moduleshifting.contents.modules,
+                        (self.moduleshifting.contents.modules._b_base_.numModules + 1) * sizeof(HMODULE)
+                    )
+                    if not bool(result_realloc):
+                        raise WindowsError('Failed to allocate additional room for our new import.')
+                    self.moduleshifting.contents.modules = cast(result_realloc, type(self.moduleshifting.contents.modules))
+                    self.moduleshifting.contents.modules[self.moduleshifting.contents.modules._b_base_.numModules] = hmod
+                    self.moduleshifting.contents.modules._b_base_.numModules += 1
+        
 
             thunkrefaddr = funcrefaddr = codebase + entry_struct.FirstThunk
             if entry_struct.OriginalFirstThunk > 0:
@@ -1002,7 +1027,9 @@ class ModuleShifting(pe.PE):
                 funcrefaddr += sizeof(PFARPROC)
                 j +=1
             i +=1 
-            
+        except AttributeError:
+            self.dbg('Import Table not found')    
+
     ### TODO - Free exe's memory
     def free_library(self):
         self.dbg("Freeing dll")
