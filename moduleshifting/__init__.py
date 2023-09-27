@@ -528,6 +528,7 @@ class ModuleShifting(pe.PE):
         
         dll_size=self.hostingdllparsed.OPTIONAL_HEADER.SizeOfImage
         
+        self.tgtsectionaddr=""
         for section in self.hostingdllparsed.sections:
             if section.Name.decode().strip('\x00').lower() == self.tgtsection:
                 self.tgtsectionaddr= section.VirtualAddress
@@ -537,7 +538,7 @@ class ModuleShifting(pe.PE):
         if self.tgtsectionaddr:
             self.dbg('Found address of %s section %s: 0x%x with size 0x%x bytes', self.hostingdll._name, self.tgtsection, self.tgtsectionaddr, self.tgtsectionsize)
         else:
-            raise WindowsError('%s section on %s dll  cannot be found', self.tgtsection, self.hostingdll._name)
+            raise OSError(f'[!] Error - {self.tgtsection} section on {self.hostingdll._name} dll cannot be found - check section name correctness')
         
         if not self.is_shellcode:
             if self.FP_bytes:
