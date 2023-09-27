@@ -2,7 +2,7 @@
 
 # ModuleShifting
 
-This tool has been presented at the  **[2023 x33fcon talk: "Improving the stealthiness of Memory Injection Techniques"](https://github.com/naksyn/talks/blob/main/x33fcon%202023%20-%20Improving%20the%20Stealthiness%20of%20Memory%20Injection%20Techniques.pdf)**
+This tool has been presented at the  **[2023 x33fcon talk: "Improving the stealthiness of Memory Injection Techniques"](https://github.com/naksyn/talks/blob/main/x33fcon%202023%20-%20Improving%20the%20Stealthiness%20of%20Memory%20Injection%20Techniques.pdf)  [[Video]](https://www.youtube.com/watch?v=_TEnBLt2JF4)  [[Blogpost]](https://naksyn.com/edr%20evasion/2023/06/01/improving-the-stealthiness-of-memory-injections.html)**
 
 # What is it
 
